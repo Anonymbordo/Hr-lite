@@ -1,0 +1,6 @@
+<Solution>
+  <Project Path="HrLite.Api/HrLite.Api.csproj" />
+  <Project Path="HrLite.Application/HrLite.Application.csproj" />
+  <Project Path="HrLite.Domain/HrLite.Domain.csproj" />
+  <Project Path="HrLite.Infrastructure/HrLite.Infrastructure.csproj" />
+</Solution>

@@ -1,0 +1,15 @@
+/Users/murathandede/hr-lite/src/HrLite.Application/obj/Debug/net8.0/HrLite.Application.csproj.AssemblyReference.cache
+/Users/murathandede/hr-lite/src/HrLite.Application/obj/Debug/net8.0/HrLite.Application.GeneratedMSBuildEditorConfig.editorconfig
+/Users/murathandede/hr-lite/src/HrLite.Application/obj/Debug/net8.0/HrLite.Application.AssemblyInfoInputs.cache
+/Users/murathandede/hr-lite/src/HrLite.Application/obj/Debug/net8.0/HrLite.Application.AssemblyInfo.cs
+/Users/murathandede/hr-lite/src/HrLite.Application/obj/Debug/net8.0/HrLite.Application.csproj.CoreCompileInputs.cache
+/Users/murathandede/hr-lite/src/HrLite.Application/bin/Debug/net8.0/HrLite.Application.deps.json
+/Users/murathandede/hr-lite/src/HrLite.Application/bin/Debug/net8.0/HrLite.Application.dll
+/Users/murathandede/hr-lite/src/HrLite.Application/bin/Debug/net8.0/HrLite.Application.pdb
+/Users/murathandede/hr-lite/src/HrLite.Application/bin/Debug/net8.0/HrLite.Domain.dll
+/Users/murathandede/hr-lite/src/HrLite.Application/bin/Debug/net8.0/HrLite.Domain.pdb
+/Users/murathandede/hr-lite/src/HrLite.Application/obj/Debug/net8.0/HrLite.A.AE03D98B.Up2Date
+/Users/murathandede/hr-lite/src/HrLite.Application/obj/Debug/net8.0/HrLite.Application.dll
+/Users/murathandede/hr-lite/src/HrLite.Application/obj/Debug/net8.0/refint/HrLite.Application.dll
+/Users/murathandede/hr-lite/src/HrLite.Application/obj/Debug/net8.0/HrLite.Application.pdb
+/Users/murathandede/hr-lite/src/HrLite.Application/obj/Debug/net8.0/ref/HrLite.Application.dll
