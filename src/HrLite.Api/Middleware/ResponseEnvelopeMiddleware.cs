@@ -44,7 +44,7 @@ public class ResponseEnvelopeMiddleware
                 data = responseText;
             }
 
-            var envelope = ApiResponse<object>.SuccessResponse(data, correlationId);
+            var envelope = ApiResponse<object>.SuccessResponse(data ?? new { }, correlationId);
             var envelopedResponse = JsonSerializer.Serialize(envelope, new JsonSerializerOptions
             {
                 PropertyNamingPolicy = JsonNamingPolicy.CamelCase
