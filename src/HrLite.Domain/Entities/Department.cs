@@ -8,6 +8,6 @@ public class Department : BaseEntity
     public string? Description { get; set; }
     public bool IsActive { get; set; } = true;
 
-    // Navigation Properties
+    // İşte eksik olan kısım burasıydı:
     public ICollection<Employee> Employees { get; set; } = new List<Employee>();
 }

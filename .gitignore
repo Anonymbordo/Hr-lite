@@ -1,0 +1,21 @@
+# Derleme Dosyalari (Bunlar asla gönderilmez)
+bin/
+obj/
+src/**/bin/
+src/**/obj/
+
+# Veritabani
+*.db
+*.db-shm
+*.db-wal
+
+# Loglar
+logs/
+**/logs/
+*.log
+
+# Kullanici Ayarlari ve Sifreler
+.env
+.idea/
+.vscode/
+*.user

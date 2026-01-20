@@ -1,3 +1,4 @@
+using DotNetEnv; // .env okumak için gerekli
 using HrLite.Api.Middleware;
 using HrLite.Api.Services;
 using HrLite.Application.Interfaces;
@@ -6,6 +7,7 @@ using HrLite.Infrastructure.AI;
 using HrLite.Infrastructure.Authentication;
 using HrLite.Infrastructure.Persistence;
 using HrLite.Infrastructure.Seed;
+using HrLite.Infrastructure.Services;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.IdentityModel.Tokens;
@@ -13,7 +15,50 @@ using Microsoft.OpenApi.Models;
 using Serilog;
 using System.Text;
 
+// --- 1. ADIM: .env DOSYASINI YÜKLE VE KONTROL ET ---
+// Bu blok, uygulama daha ayağa kalkmadan şifreleri kontrol eder.
+Env.Load();
+
+var apiKey = Environment.GetEnvironmentVariable("Ai__ApiKey");
+var currentDirectory = Directory.GetCurrentDirectory();
+
+Console.ForegroundColor = ConsoleColor.Cyan;
+Console.WriteLine("==================================================");
+Console.WriteLine($"📂 ÇALIŞMA KONUMU: {currentDirectory}");
+Console.WriteLine("==================================================");
+
+if (string.IsNullOrEmpty(apiKey))
+{
+    Console.ForegroundColor = ConsoleColor.Red;
+    Console.WriteLine("❌ [HATA] .env dosyası OKUNAMADI veya Ai__ApiKey boş!");
+    Console.WriteLine("   -> Lütfen terminalde 'src/HrLite.Api' klasörüne girdiğinden emin ol.");
+    Console.WriteLine("   -> Komut: cd src/HrLite.Api");
+}
+else if (apiKey.StartsWith("gsk_"))
+{
+    Console.ForegroundColor = ConsoleColor.Green;
+    Console.WriteLine("✅ [BAŞARILI] .env dosyası bulundu, Gerçek Groq Anahtarı yüklendi.");
+}
+else
+{
+    Console.ForegroundColor = ConsoleColor.Yellow;
+    Console.WriteLine($"⚠️ [UYARI] Bir anahtar bulundu ama 'gsk_' ile başlamıyor.");
+    Console.WriteLine($"   -> Okunan Değer: {apiKey}");
+    Console.WriteLine("   -> .env dosyasındaki şifreyi kontrol et.");
+}
+Console.ResetColor();
+Console.WriteLine("==================================================");
+// -------------------------------------------------------
+
 var builder = WebApplication.CreateBuilder(args);
+
+// --- SERVİS KAYITLARI (Dependency Injection) ---
+// AI Servisi
+builder.Services.AddScoped<IAiService, OpenAiService>();
+
+// Departman ve Çalışan Servisleri
+builder.Services.AddScoped<IDepartmentService, DepartmentService>();
+builder.Services.AddScoped<IEmployeeService, EmployeeService>();
 
 // Configure Serilog
 Log.Logger = new LoggerConfiguration()
@@ -69,6 +114,7 @@ builder.Services.AddSwaggerGen(c =>
         }
     });
 
+    // XML Comments (Varsa ekler, yoksa hata vermez)
     var xmlFile = $"{System.Reflection.Assembly.GetExecutingAssembly().GetName().Name}.xml";
     var xmlPath = Path.Combine(AppContext.BaseDirectory, xmlFile);
     if (File.Exists(xmlPath))
@@ -107,7 +153,7 @@ builder.Services.AddAuthorization();
 // HTTP Context
 builder.Services.AddHttpContextAccessor();
 
-// Application Services
+// Application Services (Diğer servisler)
 builder.Services.AddScoped<ICurrentUserService, CurrentUserService>();
 builder.Services.AddScoped<IJwtTokenGenerator, JwtTokenGenerator>();
 builder.Services.AddScoped<IAuthService, AuthService>();

@@ -13,8 +13,14 @@ public class Employee : BaseEntity
     public int? DepartmentId { get; set; }
     public DateTime HireDate { get; set; }
     public bool IsActive { get; set; } = true;
+    public string? JobDescriptionDraft { get; set; }
 
-    // Navigation Properties
+    // Self-Referencing Properties
+    public int? ManagerId { get; set; }
+    public Employee? Manager { get; set; }
+    public ICollection<Employee> DirectReports { get; set; } = new List<Employee>();
+
+    // --- MEVCUT İLİŞKİLER ---
     public Department? Department { get; set; }
     public ICollection<LeaveRequest> LeaveRequests { get; set; } = new List<LeaveRequest>();
 }

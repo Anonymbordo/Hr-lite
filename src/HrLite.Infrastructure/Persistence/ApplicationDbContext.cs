@@ -31,30 +31,42 @@ public class ApplicationDbContext : DbContext, IApplicationDbContext
     {
         base.OnModelCreating(modelBuilder);
 
-        // Employee configuration
+        // --- EMPLOYEE (ÇALIŞAN) AYARLARI ---
         modelBuilder.Entity<Employee>(entity =>
         {
             entity.HasKey(e => e.Id);
             entity.Property(e => e.Email).IsRequired().HasMaxLength(200);
+            
+            // Email Eşsizliği
             entity.HasIndex(e => e.Email).IsUnique();
+            
             entity.Property(e => e.FirstName).IsRequired().HasMaxLength(100);
             entity.Property(e => e.LastName).IsRequired().HasMaxLength(100);
+            
+            // Employee.cs içinde bu alan varsa açık kalsın:
             entity.Property(e => e.PasswordHash).IsRequired();
 
+           // Departman İlişkisi
             entity.HasOne(e => e.Department)
-                .WithMany(d => d.Employees)
+                .WithMany(d => d.Employees) 
                 .HasForeignKey(e => e.DepartmentId)
                 .OnDelete(DeleteBehavior.SetNull);
+
+            // Yönetici İlişkisi
+            entity.HasOne(e => e.Manager)
+                .WithMany(e => e.DirectReports)
+                .HasForeignKey(e => e.ManagerId)
+                .OnDelete(DeleteBehavior.Restrict);
         });
 
-        // Department configuration
+        // --- DEPARTMENT AYARLARI ---
         modelBuilder.Entity<Department>(entity =>
         {
             entity.HasKey(d => d.Id);
             entity.Property(d => d.Name).IsRequired().HasMaxLength(200);
         });
 
-        // LeaveRequest configuration
+        // --- LEAVE REQUEST (İZİN) AYARLARI ---
         modelBuilder.Entity<LeaveRequest>(entity =>
         {
             entity.HasKey(lr => lr.Id);
