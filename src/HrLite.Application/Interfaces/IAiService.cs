@@ -1,7 +1,9 @@
+using HrLite.Application.DTOs;
+
 namespace HrLite.Application.Interfaces;
 
 public interface IAiService
 {
-    // Görev ismine göre (örn: "Senior Developer") yapay zekadan açıklama isteyeceğiz.
-    Task<string> GenerateJobDescriptionAsync(string roleName, string departmentName);
+    // Görev ismi ve departmana göre JSON şemalı iş tanımı isteği
+    Task<JobDescriptionDraftDto> GenerateJobDescriptionAsync(string roleName, string departmentName);
 }

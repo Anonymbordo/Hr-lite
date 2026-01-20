@@ -54,7 +54,7 @@ var builder = WebApplication.CreateBuilder(args);
 
 // --- SERVİS KAYITLARI (Dependency Injection) ---
 // AI Servisi
-builder.Services.AddScoped<IAiService, OpenAiService>();
+builder.Services.AddHttpClient<IAiService, OpenAiService>();
 
 // Departman ve Çalışan Servisleri
 builder.Services.AddScoped<IDepartmentService, DepartmentService>();

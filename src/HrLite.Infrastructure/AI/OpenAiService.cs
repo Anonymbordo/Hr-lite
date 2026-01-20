@@ -2,6 +2,7 @@ using System.Net.Http.Headers;
 using System.Net.Http.Json;
 using System.Text.Json;
 using System.Text.Json.Serialization;
+using HrLite.Application.DTOs;
 using HrLite.Application.Interfaces;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging;
@@ -21,21 +22,29 @@ public class OpenAiService : IAiService
         _logger = logger;
     }
 
-    public async Task<string> GenerateJobDescriptionAsync(string role, string department)
+    public async Task<JobDescriptionDraftDto> GenerateJobDescriptionAsync(string role, string department)
     {
-        // 1. Ayarları Oku
         var apiKey = _configuration["Ai:ApiKey"];
         var baseUrl = _configuration["Ai:BaseUrl"] ?? "https://api.groq.com/openai/v1/chat/completions";
         var model = _configuration["Ai:Model"] ?? "llama3-8b-8192";
 
         if (string.IsNullOrEmpty(apiKey) || apiKey.StartsWith("YourSuper"))
         {
-            return "⚠️ API Anahtarı eksik! Lütfen appsettings.json dosyasina Groq API anahtarini giriniz.";
+            throw new InvalidOperationException("AI API key is missing. Configure Ai:ApiKey in appsettings.");
         }
 
-        // 2. Yapay Zekaya Gönderilecek Mesajı Hazırla
-        var systemPrompt = "Sen uzman bir İnsan Kaynakları (HR) danışmanısın. Verilen pozisyon ve departman için profesyonel, maddeler halinde ve Türkçe bir görev tanımı (Job Description) hazırla. Giriş cümlesi yazma, direkt içeriğe gir.";
-        var userPrompt = $"Pozisyon: {role}\nDepartman: {department}\n\nLütfen bu pozisyon için sorumluluklar, aranan nitelikler ve genel beklentileri içeren bir taslak oluştur.";
+        var systemPrompt = "Sen uzman bir İnsan Kaynakları (HR) danışmanısın. Verilen pozisyon ve departman için Türkçe bir görev tanımı taslağı üret. Cevabı SADECE JSON formatında döndür; markdown, serbest metin veya ek açıklama ekleme. Özel/Kişisel bilgi ekleme.";
+        var userPrompt = $@"Pozisyon: {role}
+Departman: {department}
+
+SADECE şu JSON formatında cevap ver (markdown veya başka format kullanma):
+{{
+  ""titleSuggested"": ""önerilen pozisyon adı"",
+  ""responsibilities"": [""sorumluluk 1"", ""sorumluluk 2"", ""sorumluluk 3""],
+  ""requirements"": [""gereklilik 1"", ""gereklilik 2"", ""gereklilik 3""],
+  ""niceToHave"": [""artı 1"", ""artı 2""],
+  ""jobDescription"": ""tek paragraf iş tanımı""
+}}";
 
         var requestBody = new
         {
@@ -46,7 +55,8 @@ public class OpenAiService : IAiService
                 new { role = "user", content = userPrompt }
             },
             temperature = 0.7,
-            max_tokens = 1000
+            max_tokens = 1000,
+            response_format = new { type = "json_object" }
         };
 
         // 3. İsteği Gönder
@@ -61,20 +71,43 @@ public class OpenAiService : IAiService
             if (!response.IsSuccessStatusCode)
             {
                 var error = await response.Content.ReadAsStringAsync();
-                _logger.LogError($"AI Hatası: {error}");
-                return $"AI Servis Hatası: {response.StatusCode}. Lütfen logları kontrol edin.";
+                _logger.LogError("AI error response {Status}: {Error}", response.StatusCode, error);
+                throw new InvalidOperationException("AI service returned an error. See logs for details.");
             }
 
             var jsonResponse = await response.Content.ReadFromJsonAsync<GroqResponse>();
-            
-            // Cevabı al ve döndür
-            return jsonResponse?.Choices?.FirstOrDefault()?.Message?.Content 
-                   ?? "Yapay zeka boş bir cevap döndürdü.";
+
+            var content = jsonResponse?.Choices?.FirstOrDefault()?.Message?.Content;
+
+            if (string.IsNullOrWhiteSpace(content))
+            {
+                throw new InvalidOperationException("AI returned empty content.");
+            }
+
+            try
+            {
+                var draft = JsonSerializer.Deserialize<JobDescriptionDraftDto>(content, new JsonSerializerOptions
+                {
+                    PropertyNameCaseInsensitive = true
+                });
+
+                if (draft == null)
+                {
+                    throw new InvalidOperationException("AI response could not be parsed.");
+                }
+
+                return draft;
+            }
+            catch (JsonException ex)
+            {
+                _logger.LogError(ex, "Failed to parse AI response: {Content}", content);
+                throw new InvalidOperationException("AI response was not valid JSON.");
+            }
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Groq API bağlantı hatası");
-            return $"Bağlantı Hatası: {ex.Message}";
+            _logger.LogError(ex, "Groq API çağrısı başarısız");
+            throw;
         }
     }
 
