@@ -9,9 +9,26 @@ public static class DatabaseSeeder
 {
     public static async Task SeedAsync(ApplicationDbContext context)
     {
+        // Seed should be idempotent. Some environments may have partial data.
+
+        // Seed Leave Types (required for leave module)
+        if (!await context.LeaveTypes.AnyAsync())
+        {
+            var leaveTypes = new List<LeaveType>
+            {
+                new LeaveType { Id = 1, Code = "Annual", Name = "Annual Leave", CreatedAt = DateTime.UtcNow, CreatedBy = 0 },
+                new LeaveType { Id = 2, Code = "Sick", Name = "Sick Leave", CreatedAt = DateTime.UtcNow, CreatedBy = 0 },
+                new LeaveType { Id = 3, Code = "Unpaid", Name = "Unpaid Leave", CreatedAt = DateTime.UtcNow, CreatedBy = 0 }
+            };
+
+            await context.LeaveTypes.AddRangeAsync(leaveTypes);
+            await context.SaveChangesAsync();
+        }
+
+        // If core demo data exists, do not re-seed employees/departments/leave requests.
         if (await context.Departments.AnyAsync())
         {
-            return; // Database already seeded
+            return;
         }
 
         // Seed Departments
@@ -175,6 +192,7 @@ public static class DatabaseSeeder
             new LeaveRequest
             {
                 EmployeeId = 4,
+                LeaveTypeId = 1,
                 StartDate = new DateTime(2026, 1, 10),
                 EndDate = new DateTime(2026, 1, 15),
                 Reason = "Personal vacation",
@@ -187,6 +205,7 @@ public static class DatabaseSeeder
             new LeaveRequest
             {
                 EmployeeId = 5,
+                LeaveTypeId = 2,
                 StartDate = new DateTime(2026, 2, 1),
                 EndDate = new DateTime(2026, 2, 5),
                 Reason = "Medical appointment",
@@ -197,6 +216,7 @@ public static class DatabaseSeeder
             new LeaveRequest
             {
                 EmployeeId = 6,
+                LeaveTypeId = 1,
                 StartDate = new DateTime(2026, 2, 14),
                 EndDate = new DateTime(2026, 2, 16),
                 Reason = "Family event",
@@ -209,6 +229,7 @@ public static class DatabaseSeeder
             new LeaveRequest
             {
                 EmployeeId = 7,
+                LeaveTypeId = 3,
                 StartDate = new DateTime(2026, 1, 20),
                 EndDate = new DateTime(2026, 1, 22),
                 Reason = "Business trip",
@@ -220,6 +241,7 @@ public static class DatabaseSeeder
             new LeaveRequest
             {
                 EmployeeId = 8,
+                LeaveTypeId = 1,
                 StartDate = new DateTime(2026, 3, 5),
                 EndDate = new DateTime(2026, 3, 12),
                 Reason = "Annual vacation",
@@ -230,6 +252,7 @@ public static class DatabaseSeeder
             new LeaveRequest
             {
                 EmployeeId = 9,
+                LeaveTypeId = 2,
                 StartDate = new DateTime(2026, 1, 8),
                 EndDate = new DateTime(2026, 1, 10),
                 Reason = "Sick leave",

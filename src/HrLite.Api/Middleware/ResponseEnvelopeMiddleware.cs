@@ -20,9 +20,17 @@ public class ResponseEnvelopeMiddleware
         using var responseBody = new MemoryStream();
         context.Response.Body = responseBody;
 
-        await _next(context);
+        try
+        {
+            await _next(context);
+        }
+        finally
+        {
+            // Always restore the original stream so upstream middleware (e.g., exception handling)
+            // can write directly to the real response body.
+            context.Response.Body = originalBodyStream;
+        }
 
-        context.Response.Body = originalBodyStream;
         responseBody.Seek(0, SeekOrigin.Begin);
 
         var responseText = await new StreamReader(responseBody).ReadToEndAsync();

@@ -1,21 +1,24 @@
-using HrLite.Domain.Common;
 using HrLite.Domain.Enums;
 
-namespace HrLite.Domain.Entities;
+namespace HrLite.Application.DTOs.Leave;
 
-public class LeaveRequest : BaseEntity
+public class LeaveRequestDto
 {
+    public int Id { get; set; }
     public int EmployeeId { get; set; }
+
     public int LeaveTypeId { get; set; }
+    public string LeaveTypeCode { get; set; } = string.Empty;
+    public string LeaveTypeName { get; set; } = string.Empty;
+
     public DateTime StartDate { get; set; }
     public DateTime EndDate { get; set; }
+    public int TotalDays { get; set; }
+
     public string Reason { get; set; } = string.Empty;
-    public LeaveStatus Status { get; set; } = LeaveStatus.Pending;
+    public LeaveStatus Status { get; set; }
+
     public int? ApprovedBy { get; set; }
     public DateTime? ApprovedAt { get; set; }
     public string? RejectionReason { get; set; }
-
-    // Navigation Properties
-    public Employee Employee { get; set; } = null!;
-    public LeaveType LeaveType { get; set; } = null!;
 }

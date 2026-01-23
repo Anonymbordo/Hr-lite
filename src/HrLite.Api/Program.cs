@@ -60,6 +60,10 @@ builder.Services.AddHttpClient<IAiService, OpenAiService>();
 builder.Services.AddScoped<IDepartmentService, DepartmentService>();
 builder.Services.AddScoped<IEmployeeService, EmployeeService>();
 
+// Leave Management Servisleri
+builder.Services.AddScoped<ILeaveTypesService, LeaveTypesService>();
+builder.Services.AddScoped<ILeaveRequestsService, LeaveRequestsService>();
+
 // Configure Serilog
 Log.Logger = new LoggerConfiguration()
     .ReadFrom.Configuration(builder.Configuration)
@@ -134,6 +138,10 @@ builder.Services.AddScoped<IApplicationDbContext>(provider =>
 builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
     .AddJwtBearer(options =>
     {
+        // "role" ve "email" claim'lerini aynen kullanmak için default mapping'i kapatıyoruz.
+        // Aksi halde JWT handler bazı claim'leri (örn: "role") farklı tiplere map edebilir.
+        options.MapInboundClaims = false;
+
         options.TokenValidationParameters = new TokenValidationParameters
         {
             ValidateIssuer = true,
@@ -142,6 +150,9 @@ builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
             ValidateIssuerSigningKey = true,
             ValidIssuer = builder.Configuration["Jwt:Issuer"],
             ValidAudience = builder.Configuration["Jwt:Audience"],
+            // JwtTokenGenerator "role" claim'i basıyor; Roles tabanlı authorization bunun üzerinden çalışsın.
+            RoleClaimType = "role",
+            NameClaimType = "email",
             IssuerSigningKey = new SymmetricSecurityKey(
                 Encoding.UTF8.GetBytes(builder.Configuration["Jwt:Secret"] 
                     ?? throw new InvalidOperationException("JWT secret not configured")))
