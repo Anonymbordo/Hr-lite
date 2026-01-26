@@ -12,12 +12,12 @@ public class CurrentUserService : ICurrentUserService
         _httpContextAccessor = httpContextAccessor;
     }
 
-    public int UserId
+    public Guid UserId
     {
         get
         {
             var userIdClaim = _httpContextAccessor.HttpContext?.User?.FindFirst("employeeId")?.Value;
-            return int.TryParse(userIdClaim, out var userId) ? userId : 0;
+            return Guid.TryParse(userIdClaim, out var userId) ? userId : Guid.Empty;
         }
     }
 

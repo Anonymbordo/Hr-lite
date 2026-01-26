@@ -1,3 +1,4 @@
+using HrLite.Application.Common;
 using HrLite.Domain.Entities;
 using HrLite.Domain.Enums;
 using HrLite.Infrastructure.Persistence;
@@ -11,260 +12,327 @@ public static class DatabaseSeeder
     {
         // Seed should be idempotent. Some environments may have partial data.
 
-        // Seed Leave Types (required for leave module)
         if (!await context.LeaveTypes.AnyAsync())
         {
             var leaveTypes = new List<LeaveType>
             {
-                new LeaveType { Id = 1, Code = "Annual", Name = "Annual Leave", CreatedAt = DateTime.UtcNow, CreatedBy = 0 },
-                new LeaveType { Id = 2, Code = "Sick", Name = "Sick Leave", CreatedAt = DateTime.UtcNow, CreatedBy = 0 },
-                new LeaveType { Id = 3, Code = "Unpaid", Name = "Unpaid Leave", CreatedAt = DateTime.UtcNow, CreatedBy = 0 }
+                new LeaveType { Id = Guid.NewGuid(), Code = "ANNUAL", Name = "Annual Leave", DefaultAnnualQuotaDays = 14 },
+                new LeaveType { Id = Guid.NewGuid(), Code = "SICK", Name = "Sick Leave", DefaultAnnualQuotaDays = 0 },
+                new LeaveType { Id = Guid.NewGuid(), Code = "UNPAID", Name = "Unpaid Leave", DefaultAnnualQuotaDays = 0 }
             };
 
             await context.LeaveTypes.AddRangeAsync(leaveTypes);
             await context.SaveChangesAsync();
         }
 
+        var leaveTypesByCode = await context.LeaveTypes
+            .AsNoTracking()
+            .ToDictionaryAsync(lt => lt.Code);
+
+        var existingDepartments = await context.Departments.AsNoTracking().ToListAsync();
         // If core demo data exists, do not re-seed employees/departments/leave requests.
-        if (await context.Departments.AnyAsync())
+        if (existingDepartments.Any())
         {
+            await BackfillJobDescriptionsAsync(context, existingDepartments);
             return;
         }
+
+        var engineeringId = Guid.NewGuid();
+        var hrId = Guid.NewGuid();
+        var salesId = Guid.NewGuid();
+        var financeId = Guid.NewGuid();
 
         // Seed Departments
         var departments = new List<Department>
         {
-            new Department { Id = 1, Name = "Engineering", Description = "Software Development", CreatedAt = DateTime.UtcNow, CreatedBy = 0 },
-            new Department { Id = 2, Name = "Human Resources", Description = "HR Management", CreatedAt = DateTime.UtcNow, CreatedBy = 0 },
-            new Department { Id = 3, Name = "Sales", Description = "Sales and Marketing", CreatedAt = DateTime.UtcNow, CreatedBy = 0 },
-            new Department { Id = 4, Name = "Finance", Description = "Financial Operations", CreatedAt = DateTime.UtcNow, CreatedBy = 0 }
+            new Department { Id = engineeringId, Name = "Engineering", Description = "Software Development", IsActive = true },
+            new Department { Id = hrId, Name = "Human Resources", Description = "HR Management", IsActive = true },
+            new Department { Id = salesId, Name = "Sales", Description = "Sales and Marketing", IsActive = true },
+            new Department { Id = financeId, Name = "Finance", Description = "Financial Operations", IsActive = true }
         };
 
         await context.Departments.AddRangeAsync(departments);
         await context.SaveChangesAsync();
 
+        var departmentNamesById = departments.ToDictionary(d => d.Id, d => d.Name);
+
+        var adminId = Guid.NewGuid();
+        var hrUser1Id = Guid.NewGuid();
+        var hrUser2Id = Guid.NewGuid();
+        var employee1Id = Guid.NewGuid();
+        var employee2Id = Guid.NewGuid();
+        var employee3Id = Guid.NewGuid();
+        var employee4Id = Guid.NewGuid();
+        var employee5Id = Guid.NewGuid();
+        var employee6Id = Guid.NewGuid();
+        var employee7Id = Guid.NewGuid();
+
         // Seed Employees (password is "password123" for all)
         var employees = new List<Employee>
         {
-            // Admin
             new Employee
             {
-                Id = 1,
+                Id = adminId,
                 FirstName = "Admin",
                 LastName = "User",
                 Email = "admin@hrlite.com",
-                PasswordHash = "password123", // In production, use BCrypt
+                Phone = "+1-555-0001",
+                PasswordHash = "password123",
                 Role = Role.Admin,
-                DepartmentId = 2,
+                Status = EmployeeStatus.Active,
+                DepartmentId = hrId,
                 HireDate = DateTime.UtcNow.AddYears(-3),
-                CreatedAt = DateTime.UtcNow,
-                CreatedBy = 0
+                Salary = 90000m
             },
-            // HR Users
             new Employee
             {
-                Id = 2,
+                Id = hrUser1Id,
                 FirstName = "Sarah",
                 LastName = "Johnson",
                 Email = "sarah.johnson@hrlite.com",
+                Phone = "+1-555-0002",
                 PasswordHash = "password123",
                 Role = Role.HR,
-                DepartmentId = 2,
+                Status = EmployeeStatus.Active,
+                DepartmentId = hrId,
                 HireDate = DateTime.UtcNow.AddYears(-2),
-                CreatedAt = DateTime.UtcNow,
-                CreatedBy = 0
+                Salary = 80000m
             },
             new Employee
             {
-                Id = 3,
+                Id = hrUser2Id,
                 FirstName = "Michael",
                 LastName = "Brown",
                 Email = "michael.brown@hrlite.com",
+                Phone = "+1-555-0003",
                 PasswordHash = "password123",
                 Role = Role.HR,
-                DepartmentId = 2,
+                Status = EmployeeStatus.Active,
+                DepartmentId = hrId,
                 HireDate = DateTime.UtcNow.AddYears(-1),
-                CreatedAt = DateTime.UtcNow,
-                CreatedBy = 0
+                Salary = 78000m
             },
-            // Regular Employees - Engineering
             new Employee
             {
-                Id = 4,
+                Id = employee1Id,
                 FirstName = "John",
                 LastName = "Doe",
                 Email = "john.doe@hrlite.com",
+                Phone = "+1-555-0101",
                 PasswordHash = "password123",
                 Role = Role.Employee,
-                DepartmentId = 1,
+                Status = EmployeeStatus.Active,
+                DepartmentId = engineeringId,
                 HireDate = DateTime.UtcNow.AddYears(-1),
-                CreatedAt = DateTime.UtcNow,
-                CreatedBy = 0
+                Salary = 70000m
             },
             new Employee
             {
-                Id = 5,
+                Id = employee2Id,
                 FirstName = "Jane",
                 LastName = "Smith",
                 Email = "jane.smith@hrlite.com",
+                Phone = "+1-555-0102",
                 PasswordHash = "password123",
                 Role = Role.Employee,
-                DepartmentId = 1,
+                Status = EmployeeStatus.Active,
+                DepartmentId = engineeringId,
                 HireDate = DateTime.UtcNow.AddMonths(-6),
-                CreatedAt = DateTime.UtcNow,
-                CreatedBy = 0
+                Salary = 68000m
             },
             new Employee
             {
-                Id = 6,
+                Id = employee3Id,
                 FirstName = "Alice",
                 LastName = "Williams",
                 Email = "alice.williams@hrlite.com",
+                Phone = "+1-555-0103",
                 PasswordHash = "password123",
                 Role = Role.Employee,
-                DepartmentId = 1,
+                Status = EmployeeStatus.Active,
+                DepartmentId = engineeringId,
                 HireDate = DateTime.UtcNow.AddMonths(-8),
-                CreatedAt = DateTime.UtcNow,
-                CreatedBy = 0
+                Salary = 69000m
             },
-            // Sales
             new Employee
             {
-                Id = 7,
+                Id = employee4Id,
                 FirstName = "Bob",
                 LastName = "Davis",
                 Email = "bob.davis@hrlite.com",
+                Phone = "+1-555-0201",
                 PasswordHash = "password123",
                 Role = Role.Employee,
-                DepartmentId = 3,
+                Status = EmployeeStatus.Active,
+                DepartmentId = salesId,
                 HireDate = DateTime.UtcNow.AddMonths(-4),
-                CreatedAt = DateTime.UtcNow,
-                CreatedBy = 0
+                Salary = 62000m
             },
             new Employee
             {
-                Id = 8,
+                Id = employee5Id,
                 FirstName = "Carol",
                 LastName = "Miller",
                 Email = "carol.miller@hrlite.com",
+                Phone = "+1-555-0202",
                 PasswordHash = "password123",
                 Role = Role.Employee,
-                DepartmentId = 3,
+                Status = EmployeeStatus.Active,
+                DepartmentId = salesId,
                 HireDate = DateTime.UtcNow.AddMonths(-10),
-                CreatedAt = DateTime.UtcNow,
-                CreatedBy = 0
+                Salary = 61000m
             },
-            // Finance
             new Employee
             {
-                Id = 9,
+                Id = employee6Id,
                 FirstName = "David",
                 LastName = "Wilson",
                 Email = "david.wilson@hrlite.com",
+                Phone = "+1-555-0301",
                 PasswordHash = "password123",
                 Role = Role.Employee,
-                DepartmentId = 4,
+                Status = EmployeeStatus.Active,
+                DepartmentId = financeId,
                 HireDate = DateTime.UtcNow.AddMonths(-7),
-                CreatedAt = DateTime.UtcNow,
-                CreatedBy = 0
+                Salary = 73000m
             },
             new Employee
             {
-                Id = 10,
+                Id = employee7Id,
                 FirstName = "Emma",
                 LastName = "Moore",
                 Email = "emma.moore@hrlite.com",
+                Phone = "+1-555-0302",
                 PasswordHash = "password123",
                 Role = Role.Employee,
-                DepartmentId = 4,
+                Status = EmployeeStatus.Active,
+                DepartmentId = financeId,
                 HireDate = DateTime.UtcNow.AddMonths(-3),
-                CreatedAt = DateTime.UtcNow,
-                CreatedBy = 0
+                Salary = 71000m
             }
         };
 
+        foreach (var employee in employees)
+        {
+            var departmentName = employee.DepartmentId.HasValue
+                && departmentNamesById.TryGetValue(employee.DepartmentId.Value, out var name)
+                ? name
+                : "Genel";
+            employee.JobDescriptionDraft = JobDescriptionTemplate.BuildJson(employee.Role.ToString(), departmentName);
+        }
+
         await context.Employees.AddRangeAsync(employees);
         await context.SaveChangesAsync();
+
+        var annualLeaveTypeId = leaveTypesByCode["ANNUAL"].Id;
+        var sickLeaveTypeId = leaveTypesByCode["SICK"].Id;
+        var unpaidLeaveTypeId = leaveTypesByCode["UNPAID"].Id;
 
         // Seed Leave Requests for 2026
         var leaveRequests = new List<LeaveRequest>
         {
             new LeaveRequest
             {
-                EmployeeId = 4,
-                LeaveTypeId = 1,
+                EmployeeId = employee1Id,
+                LeaveTypeId = annualLeaveTypeId,
                 StartDate = new DateTime(2026, 1, 10),
                 EndDate = new DateTime(2026, 1, 15),
+                Days = CountDays(new DateTime(2026, 1, 10), new DateTime(2026, 1, 15)),
                 Reason = "Personal vacation",
                 Status = LeaveStatus.Approved,
-                ApprovedBy = 2,
-                ApprovedAt = new DateTime(2026, 1, 5),
-                CreatedAt = new DateTime(2026, 1, 3),
-                CreatedBy = 4
+                ApprovedBy = hrUser1Id,
+                ApprovedAt = new DateTime(2026, 1, 5)
             },
             new LeaveRequest
             {
-                EmployeeId = 5,
-                LeaveTypeId = 2,
+                EmployeeId = employee2Id,
+                LeaveTypeId = sickLeaveTypeId,
                 StartDate = new DateTime(2026, 2, 1),
                 EndDate = new DateTime(2026, 2, 5),
+                Days = CountDays(new DateTime(2026, 2, 1), new DateTime(2026, 2, 5)),
                 Reason = "Medical appointment",
-                Status = LeaveStatus.Pending,
-                CreatedAt = new DateTime(2026, 1, 25),
-                CreatedBy = 5
+                Status = LeaveStatus.Pending
             },
             new LeaveRequest
             {
-                EmployeeId = 6,
-                LeaveTypeId = 1,
+                EmployeeId = employee3Id,
+                LeaveTypeId = annualLeaveTypeId,
                 StartDate = new DateTime(2026, 2, 14),
                 EndDate = new DateTime(2026, 2, 16),
+                Days = CountDays(new DateTime(2026, 2, 14), new DateTime(2026, 2, 16)),
                 Reason = "Family event",
                 Status = LeaveStatus.Approved,
-                ApprovedBy = 2,
-                ApprovedAt = new DateTime(2026, 2, 10),
-                CreatedAt = new DateTime(2026, 2, 8),
-                CreatedBy = 6
+                ApprovedBy = hrUser1Id,
+                ApprovedAt = new DateTime(2026, 2, 10)
             },
             new LeaveRequest
             {
-                EmployeeId = 7,
-                LeaveTypeId = 3,
+                EmployeeId = employee4Id,
+                LeaveTypeId = unpaidLeaveTypeId,
                 StartDate = new DateTime(2026, 1, 20),
                 EndDate = new DateTime(2026, 1, 22),
+                Days = CountDays(new DateTime(2026, 1, 20), new DateTime(2026, 1, 22)),
                 Reason = "Business trip",
                 Status = LeaveStatus.Rejected,
-                RejectionReason = "Peak season, cannot approve",
-                CreatedAt = new DateTime(2026, 1, 15),
-                CreatedBy = 7
+                RejectReason = "Peak season, cannot approve"
             },
             new LeaveRequest
             {
-                EmployeeId = 8,
-                LeaveTypeId = 1,
+                EmployeeId = employee5Id,
+                LeaveTypeId = annualLeaveTypeId,
                 StartDate = new DateTime(2026, 3, 5),
                 EndDate = new DateTime(2026, 3, 12),
+                Days = CountDays(new DateTime(2026, 3, 5), new DateTime(2026, 3, 12)),
                 Reason = "Annual vacation",
-                Status = LeaveStatus.Pending,
-                CreatedAt = new DateTime(2026, 2, 20),
-                CreatedBy = 8
+                Status = LeaveStatus.Pending
             },
             new LeaveRequest
             {
-                EmployeeId = 9,
-                LeaveTypeId = 2,
+                EmployeeId = employee6Id,
+                LeaveTypeId = sickLeaveTypeId,
                 StartDate = new DateTime(2026, 1, 8),
                 EndDate = new DateTime(2026, 1, 10),
+                Days = CountDays(new DateTime(2026, 1, 8), new DateTime(2026, 1, 10)),
                 Reason = "Sick leave",
                 Status = LeaveStatus.Approved,
-                ApprovedBy = 3,
-                ApprovedAt = new DateTime(2026, 1, 7),
-                CreatedAt = new DateTime(2026, 1, 6),
-                CreatedBy = 9
+                ApprovedBy = hrUser2Id,
+                ApprovedAt = new DateTime(2026, 1, 7)
             }
         };
 
         await context.LeaveRequests.AddRangeAsync(leaveRequests);
         await context.SaveChangesAsync();
+    }
+
+    private static async Task BackfillJobDescriptionsAsync(
+        ApplicationDbContext context,
+        IReadOnlyCollection<Department> departments)
+    {
+        var departmentNamesById = departments.ToDictionary(d => d.Id, d => d.Name);
+        var employees = await context.Employees
+            .Where(e => e.JobDescriptionDraft == null || e.JobDescriptionDraft == string.Empty)
+            .ToListAsync();
+
+        if (employees.Count == 0)
+        {
+            return;
+        }
+
+        foreach (var employee in employees)
+        {
+            var departmentName = employee.DepartmentId.HasValue
+                && departmentNamesById.TryGetValue(employee.DepartmentId.Value, out var name)
+                ? name
+                : "Genel";
+            employee.JobDescriptionDraft = JobDescriptionTemplate.BuildJson(employee.Role.ToString(), departmentName);
+        }
+
+        await context.SaveChangesAsync();
+    }
+
+    private static int CountDays(DateTime startDate, DateTime endDate)
+    {
+        var days = (endDate.Date - startDate.Date).Days + 1;
+        return days < 0 ? 0 : days;
     }
 }

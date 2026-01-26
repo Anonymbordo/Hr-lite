@@ -6,4 +6,6 @@ public interface ILlmClient
 
     Task<string> NormalizeLeaveReasonAsync(string text, IReadOnlyList<string> allowedLeaveTypeCodes, CancellationToken cancellationToken = default);
     Task<string> ExplainLeaveDecisionAsync(string decisionFactsJson, CancellationToken cancellationToken = default);
+
+    Task<string> GenerateJobDescriptionAsync(string roleName, string departmentName, CancellationToken cancellationToken = default);
 }

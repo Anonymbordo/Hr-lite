@@ -56,10 +56,28 @@ public class GlobalExceptionMiddleware
 
             case BusinessException businessEx:
                 statusCode = HttpStatusCode.Conflict;
-                errorCode = businessEx.ErrorCode;
+                errorCode = "BUSINESS_RULE_VIOLATION";
                 message = businessEx.Message;
                 details = businessEx.Details;
+                if (!string.IsNullOrWhiteSpace(businessEx.ErrorCode) && businessEx.ErrorCode != "BUSINESS_RULE_VIOLATION")
+                {
+                    details.Add($"Code: {businessEx.ErrorCode}");
+                }
                 _logger.LogWarning(businessEx, "Business rule violation. CorrelationId: {CorrelationId}", correlationId);
+                break;
+
+            case UnauthorizedException unauthorizedEx:
+                statusCode = HttpStatusCode.Unauthorized;
+                errorCode = "UNAUTHORIZED";
+                message = unauthorizedEx.Message;
+                _logger.LogWarning(unauthorizedEx, "Unauthorized access attempt. CorrelationId: {CorrelationId}", correlationId);
+                break;
+
+            case ForbiddenException forbiddenEx:
+                statusCode = HttpStatusCode.Forbidden;
+                errorCode = "FORBIDDEN";
+                message = forbiddenEx.Message;
+                _logger.LogWarning(forbiddenEx, "Forbidden access attempt. CorrelationId: {CorrelationId}", correlationId);
                 break;
 
             case UnauthorizedAccessException:

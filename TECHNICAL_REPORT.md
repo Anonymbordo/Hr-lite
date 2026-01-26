@@ -1143,10 +1143,10 @@ GET http://localhost:5000/swagger/v1/swagger.json
 
 ---
 
-**Hazırlayan:** Murat Han Dede  
-**Rol:** Backend Developer (Stajyer)  
-**Tarih:** 17 Ocak 2026  
-**Süre:** 1 gün (yoğun geliştirme)  
+**Hazırlayan:** Murathan Dede ,Ahmet Ayvalık,Muhammed Derviş Koçar
+**Roller:**   Yapay Zeka Mühendisliği, Backend Developer
+**Tarih:** 9 Ocak 2026  
+**Süre:** 14 gün 
 **Teknoloji Stack:** .NET 9, EF Core, JWT, Serilog, OpenAI
 
 **Durum:** ✅ Production-ready (minor improvements önerilir)

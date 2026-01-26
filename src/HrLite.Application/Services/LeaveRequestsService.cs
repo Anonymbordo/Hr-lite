@@ -1,9 +1,10 @@
+using HrLite.Application.Common;
 using HrLite.Application.Common.Exceptions;
 using HrLite.Application.DTOs;
 using HrLite.Application.DTOs.Leave;
 using HrLite.Application.Interfaces;
+using HrLite.Application.Validators;
 using HrLite.Domain.Enums;
-using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using System.Text.Json;
 
@@ -11,20 +12,29 @@ namespace HrLite.Application.Services;
 
 public class LeaveRequestsService : ILeaveRequestsService
 {
-    private const string AnnualLeaveTypeCodeDefault = "Annual";
+    private const string AnnualLeaveTypeCodeDefault = "ANNUAL";
+    private static readonly CreateLeaveRequestDtoValidator CreateValidator = new();
+    private static readonly RejectLeaveRequestDtoValidator RejectValidator = new();
+    private static readonly NormalizeLeaveReasonRequestDtoValidator NormalizeValidator = new();
 
-    private readonly IApplicationDbContext _context;
+    private readonly ILeaveRequestRepository _leaveRequests;
+    private readonly ILeaveTypeRepository _leaveTypes;
+    private readonly IUnitOfWork _unitOfWork;
     private readonly ICurrentUserService _currentUser;
     private readonly ILlmClient _llmClient;
     private readonly IConfiguration _configuration;
 
     public LeaveRequestsService(
-        IApplicationDbContext context,
+        ILeaveRequestRepository leaveRequests,
+        ILeaveTypeRepository leaveTypes,
+        IUnitOfWork unitOfWork,
         ICurrentUserService currentUser,
         ILlmClient llmClient,
         IConfiguration configuration)
     {
-        _context = context;
+        _leaveRequests = leaveRequests;
+        _leaveTypes = leaveTypes;
+        _unitOfWork = unitOfWork;
         _currentUser = currentUser;
         _llmClient = llmClient;
         _configuration = configuration;
@@ -51,42 +61,28 @@ public class LeaveRequestsService : ILeaveRequestsService
         var isEmployee = IsEmployee();
         var currentEmployeeId = _currentUser.UserId;
 
-        var q = _context.LeaveRequests
-            .AsNoTracking()
-            .Include(lr => lr.LeaveType)
-            .Where(lr => !isEmployee || lr.EmployeeId == currentEmployeeId);
+        var result = await _leaveRequests.GetPagedAsync(
+            statusFilter,
+            isEmployee ? currentEmployeeId : null,
+            page,
+            pageSize);
 
-        if (statusFilter.HasValue)
-        {
-            q = q.Where(lr => lr.Status == statusFilter.Value);
-        }
-
-        var totalCount = await q.CountAsync();
-
-        var items = await q
-            .OrderByDescending(lr => lr.Id)
-            .Skip((page - 1) * pageSize)
-            .Take(pageSize)
-            .Select(lr => ToDto(lr))
-            .ToListAsync();
+        var items = result.Items.Select(ToDto).ToList();
 
         return new PagedResultDto<LeaveRequestDto>
         {
             Items = items,
-            TotalCount = totalCount,
+            TotalCount = result.TotalCount,
             Page = page,
             PageSize = pageSize
         };
     }
 
-    public async Task<LeaveRequestDto> GetByIdAsync(int id)
+    public async Task<LeaveRequestDto> GetByIdAsync(Guid id)
     {
         EnsureAuthenticated();
 
-        var entity = await _context.LeaveRequests
-            .AsNoTracking()
-            .Include(lr => lr.LeaveType)
-            .FirstOrDefaultAsync(lr => lr.Id == id);
+        var entity = await _leaveRequests.GetByIdWithLeaveTypeAsync(id);
 
         if (entity == null)
         {
@@ -107,25 +103,12 @@ public class LeaveRequestsService : ILeaveRequestsService
             throw new ValidationException("Request body is required.");
         }
 
-        if (string.IsNullOrWhiteSpace(dto.LeaveTypeCode))
-        {
-            throw new ValidationException("LeaveTypeCode is required.");
-        }
-
-        if (string.IsNullOrWhiteSpace(dto.Reason))
-        {
-            throw new ValidationException("Reason is required.");
-        }
+        ValidationHelper.ValidateAndThrow(CreateValidator, dto);
 
         var start = dto.StartDate.Date;
         var end = dto.EndDate.Date;
-        if (start > end)
-        {
-            throw new ValidationException("StartDate must be less than or equal to EndDate.");
-        }
 
-        var leaveType = await _context.LeaveTypes
-            .FirstOrDefaultAsync(lt => lt.Code.ToLower() == dto.LeaveTypeCode.Trim().ToLower());
+        var leaveType = await _leaveTypes.GetByCodeAsync(dto.LeaveTypeCode);
 
         if (leaveType == null)
         {
@@ -135,7 +118,7 @@ public class LeaveRequestsService : ILeaveRequestsService
         var employeeId = _currentUser.UserId;
 
         await EnsureNoOverlapAsync(employeeId, start, end);
-        await EnsureAnnualQuotaAsync(employeeId, leaveType.Code, start, end);
+        await EnsureAnnualQuotaAsync(employeeId, leaveType, start, end);
 
         var entity = new HrLite.Domain.Entities.LeaveRequest
         {
@@ -143,31 +126,29 @@ public class LeaveRequestsService : ILeaveRequestsService
             LeaveTypeId = leaveType.Id,
             StartDate = start,
             EndDate = end,
+            Days = CountInclusiveDays(start, end),
             Reason = dto.Reason.Trim(),
-            Status = LeaveStatus.Pending,
-            CreatedAt = DateTime.UtcNow,
-            CreatedBy = employeeId
+            Status = LeaveStatus.Pending
         };
 
-        _context.LeaveRequests.Add(entity);
-        await _context.SaveChangesAsync();
+        _leaveRequests.Add(entity);
+        await _unitOfWork.SaveChangesAsync();
 
-        var created = await _context.LeaveRequests
-            .AsNoTracking()
-            .Include(lr => lr.LeaveType)
-            .FirstAsync(lr => lr.Id == entity.Id);
+        var created = await _leaveRequests.GetByIdWithLeaveTypeAsync(entity.Id);
+        if (created == null)
+        {
+            throw new NotFoundException($"Leave request not found. Id: {entity.Id}");
+        }
 
         return ToDto(created);
     }
 
-    public async Task<LeaveRequestDto> ApproveAsync(int id)
+    public async Task<LeaveRequestDto> ApproveAsync(Guid id)
     {
         EnsureAuthenticated();
         EnsureHrOrAdmin();
 
-        var entity = await _context.LeaveRequests
-            .Include(lr => lr.LeaveType)
-            .FirstOrDefaultAsync(lr => lr.Id == id);
+        var entity = await _leaveRequests.GetByIdWithLeaveTypeAsync(id);
 
         if (entity == null)
         {
@@ -186,33 +167,30 @@ public class LeaveRequestsService : ILeaveRequestsService
 
         // Safety check: even if it passed at create time, ensure no overlap and quota at approval.
         await EnsureNoOverlapAsync(entity.EmployeeId, entity.StartDate.Date, entity.EndDate.Date, excludeLeaveRequestId: entity.Id);
-        await EnsureAnnualQuotaAsync(entity.EmployeeId, entity.LeaveType.Code, entity.StartDate.Date, entity.EndDate.Date, excludeLeaveRequestId: entity.Id);
+        await EnsureAnnualQuotaAsync(entity.EmployeeId, entity.LeaveType, entity.StartDate.Date, entity.EndDate.Date, excludeLeaveRequestId: entity.Id);
 
         entity.Status = LeaveStatus.Approved;
         entity.ApprovedBy = _currentUser.UserId;
         entity.ApprovedAt = DateTime.UtcNow;
-        entity.RejectionReason = null;
-        entity.UpdatedAt = DateTime.UtcNow;
-        entity.UpdatedBy = _currentUser.UserId;
+        entity.RejectReason = null;
 
-        await _context.SaveChangesAsync();
+        await _unitOfWork.SaveChangesAsync();
 
         return ToDto(entity);
     }
 
-    public async Task<LeaveRequestDto> RejectAsync(int id, RejectLeaveRequestDto dto)
+    public async Task<LeaveRequestDto> RejectAsync(Guid id, RejectLeaveRequestDto dto)
     {
         EnsureAuthenticated();
         EnsureHrOrAdmin();
 
-        if (dto == null || string.IsNullOrWhiteSpace(dto.RejectionReason))
+        if (dto == null)
         {
-            throw new ValidationException("RejectionReason is required.");
+            throw new ValidationException("Request body is required.");
         }
+        ValidationHelper.ValidateAndThrow(RejectValidator, dto);
 
-        var entity = await _context.LeaveRequests
-            .Include(lr => lr.LeaveType)
-            .FirstOrDefaultAsync(lr => lr.Id == id);
+        var entity = await _leaveRequests.GetByIdWithLeaveTypeAsync(id);
 
         if (entity == null)
         {
@@ -230,22 +208,18 @@ public class LeaveRequestsService : ILeaveRequestsService
         }
 
         entity.Status = LeaveStatus.Rejected;
-        entity.RejectionReason = dto.RejectionReason.Trim();
-        entity.UpdatedAt = DateTime.UtcNow;
-        entity.UpdatedBy = _currentUser.UserId;
+        entity.RejectReason = dto.RejectReason.Trim();
 
-        await _context.SaveChangesAsync();
+        await _unitOfWork.SaveChangesAsync();
 
         return ToDto(entity);
     }
 
-    public async Task<LeaveRequestDto> CancelAsync(int id)
+    public async Task<LeaveRequestDto> CancelAsync(Guid id)
     {
         EnsureAuthenticated();
 
-        var entity = await _context.LeaveRequests
-            .Include(lr => lr.LeaveType)
-            .FirstOrDefaultAsync(lr => lr.Id == id);
+        var entity = await _leaveRequests.GetByIdWithLeaveTypeAsync(id);
 
         if (entity == null)
         {
@@ -255,7 +229,7 @@ public class LeaveRequestsService : ILeaveRequestsService
         // Employee can only cancel their own request.
         if (IsEmployee() && entity.EmployeeId != _currentUser.UserId)
         {
-            throw new UnauthorizedAccessException();
+            throw new ForbiddenException();
         }
 
         if (entity.Status == LeaveStatus.Cancelled)
@@ -269,10 +243,8 @@ public class LeaveRequestsService : ILeaveRequestsService
         }
 
         entity.Status = LeaveStatus.Cancelled;
-        entity.UpdatedAt = DateTime.UtcNow;
-        entity.UpdatedBy = _currentUser.UserId;
 
-        await _context.SaveChangesAsync();
+        await _unitOfWork.SaveChangesAsync();
 
         return ToDto(entity);
     }
@@ -281,16 +253,13 @@ public class LeaveRequestsService : ILeaveRequestsService
     {
         EnsureAuthenticated();
 
-        if (dto == null || string.IsNullOrWhiteSpace(dto.Text))
+        if (dto == null)
         {
-            throw new ValidationException("Text is required.");
+            throw new ValidationException("Request body is required.");
         }
+        ValidationHelper.ValidateAndThrow(NormalizeValidator, dto);
 
-        var allowedCodes = await _context.LeaveTypes
-            .AsNoTracking()
-            .OrderBy(lt => lt.Id)
-            .Select(lt => lt.Code)
-            .ToListAsync();
+        var allowedCodes = await _leaveTypes.GetAllCodesAsync();
 
         var json = await _llmClient.NormalizeLeaveReasonAsync(dto.Text, allowedCodes);
 
@@ -321,14 +290,11 @@ public class LeaveRequestsService : ILeaveRequestsService
         }
     }
 
-    public async Task<ExplainDecisionResponseDto> ExplainDecisionAsync(int id)
+    public async Task<ExplainDecisionResponseDto> ExplainDecisionAsync(Guid id)
     {
         EnsureAuthenticated();
 
-        var entity = await _context.LeaveRequests
-            .AsNoTracking()
-            .Include(lr => lr.LeaveType)
-            .FirstOrDefaultAsync(lr => lr.Id == id);
+        var entity = await _leaveRequests.GetByIdWithLeaveTypeAsync(id);
 
         if (entity == null)
         {
@@ -345,9 +311,9 @@ public class LeaveRequestsService : ILeaveRequestsService
             leaveTypeName = entity.LeaveType.Name,
             startDate = entity.StartDate.Date,
             endDate = entity.EndDate.Date,
-            totalDays = CountInclusiveDays(entity.StartDate.Date, entity.EndDate.Date),
+            totalDays = entity.Days,
             status = entity.Status.ToString(),
-            rejectionReason = entity.RejectionReason
+            rejectReason = entity.RejectReason
         };
 
         var factsJson = JsonSerializer.Serialize(facts, new JsonSerializerOptions
@@ -355,7 +321,16 @@ public class LeaveRequestsService : ILeaveRequestsService
             PropertyNamingPolicy = JsonNamingPolicy.CamelCase
         });
 
-        var json = await _llmClient.ExplainLeaveDecisionAsync(factsJson);
+        var fallbackExplanation = BuildDecisionExplanation(entity);
+        string json;
+        try
+        {
+            json = await _llmClient.ExplainLeaveDecisionAsync(factsJson);
+        }
+        catch (TaskCanceledException)
+        {
+            return new ExplainDecisionResponseDto { Explanation = fallbackExplanation };
+        }
 
         try
         {
@@ -364,17 +339,69 @@ public class LeaveRequestsService : ILeaveRequestsService
                 PropertyNameCaseInsensitive = true
             });
 
-            if (parsed == null)
+            if (parsed == null ||
+                string.IsNullOrWhiteSpace(parsed.Explanation) ||
+                LooksLikeAiFailure(parsed.Explanation))
             {
-                throw new BusinessException("Failed to parse AI explanation response.", "AI_PARSE_ERROR");
+                return new ExplainDecisionResponseDto { Explanation = fallbackExplanation };
             }
 
             return parsed;
         }
-        catch (JsonException ex)
+        catch (JsonException)
         {
-            throw new BusinessException($"Failed to parse AI response: {ex.Message}", "AI_PARSE_ERROR");
+            return new ExplainDecisionResponseDto { Explanation = fallbackExplanation };
         }
+    }
+
+    private static bool LooksLikeAiFailure(string? explanation)
+    {
+        if (string.IsNullOrWhiteSpace(explanation))
+        {
+            return true;
+        }
+
+        return explanation.Contains("AI aciklamasi", StringComparison.OrdinalIgnoreCase)
+            || explanation.Contains("uretilemedi", StringComparison.OrdinalIgnoreCase)
+            || explanation.Contains("servisi", StringComparison.OrdinalIgnoreCase);
+    }
+
+    private static string BuildDecisionExplanation(HrLite.Domain.Entities.LeaveRequest entity)
+    {
+        var dateRange = $"{entity.StartDate:yyyy-MM-dd} - {entity.EndDate:yyyy-MM-dd}";
+        var baseLine =
+            $"Izin talebi {entity.LeaveType.Name} ({entity.LeaveType.Code}) turundedir ve {dateRange} tarihlerini kapsar. " +
+            $"Toplam {entity.Days} gun icin kaydedilmistir.";
+
+        var statusLine = entity.Status switch
+        {
+            LeaveStatus.Approved => BuildApprovedLine(entity.ApprovedAt),
+            LeaveStatus.Rejected => BuildRejectedLine(entity.RejectReason),
+            LeaveStatus.Pending => "Durum: Incelemede. Onay veya ret islemi henuz tamamlanmamistir.",
+            _ => $"Durum: {entity.Status}."
+        };
+
+        return $"{baseLine} {statusLine}";
+    }
+
+    private static string BuildApprovedLine(DateTime? approvedAt)
+    {
+        if (approvedAt.HasValue)
+        {
+            return $"Durum: Onaylandi. Islem tarihi: {approvedAt:yyyy-MM-dd HH:mm}.";
+        }
+
+        return "Durum: Onaylandi. Onay tarihi kaydedilmemistir.";
+    }
+
+    private static string BuildRejectedLine(string? rejectReason)
+    {
+        if (!string.IsNullOrWhiteSpace(rejectReason))
+        {
+            return $"Durum: Reddedildi. Red nedeni: {rejectReason.Trim()}";
+        }
+
+        return "Durum: Reddedildi. Red nedeni kaydedilmemistir.";
     }
 
     private static LeaveRequestDto ToDto(HrLite.Domain.Entities.LeaveRequest lr)
@@ -388,12 +415,12 @@ public class LeaveRequestsService : ILeaveRequestsService
             LeaveTypeName = lr.LeaveType.Name,
             StartDate = lr.StartDate,
             EndDate = lr.EndDate,
-            TotalDays = CountInclusiveDays(lr.StartDate.Date, lr.EndDate.Date),
+            Days = lr.Days,
             Reason = lr.Reason,
             Status = lr.Status,
             ApprovedBy = lr.ApprovedBy,
             ApprovedAt = lr.ApprovedAt,
-            RejectionReason = lr.RejectionReason
+            RejectReason = lr.RejectReason
         };
     }
 
@@ -407,7 +434,7 @@ public class LeaveRequestsService : ILeaveRequestsService
     {
         if (!_currentUser.IsAuthenticated)
         {
-            throw new UnauthorizedAccessException();
+            throw new UnauthorizedException();
         }
     }
 
@@ -422,31 +449,26 @@ public class LeaveRequestsService : ILeaveRequestsService
     {
         if (!IsHrOrAdmin())
         {
-            throw new UnauthorizedAccessException();
+            throw new ForbiddenException();
         }
     }
 
-    private void EnsureCanAccessLeave(int employeeId)
+    private void EnsureCanAccessLeave(Guid employeeId)
     {
         if (IsEmployee() && employeeId != _currentUser.UserId)
         {
-            throw new UnauthorizedAccessException();
+            throw new ForbiddenException();
         }
     }
 
-    private async Task EnsureNoOverlapAsync(int employeeId, DateTime newStart, DateTime newEnd, int? excludeLeaveRequestId = null)
+    private async Task EnsureNoOverlapAsync(Guid employeeId, DateTime newStart, DateTime newEnd, Guid? excludeLeaveRequestId = null)
     {
-        var q = _context.LeaveRequests
-            .AsNoTracking()
-            .Where(lr => lr.EmployeeId == employeeId)
-            .Where(lr => lr.Status == LeaveStatus.Pending || lr.Status == LeaveStatus.Approved);
+        var candidates = await _leaveRequests.GetForEmployeeWithStatusesAsync(
+            employeeId,
+            new[] { LeaveStatus.Pending, LeaveStatus.Approved },
+            excludeLeaveRequestId);
 
-        if (excludeLeaveRequestId.HasValue)
-        {
-            q = q.Where(lr => lr.Id != excludeLeaveRequestId.Value);
-        }
-
-        var overlaps = await q.AnyAsync(lr =>
+        var overlaps = candidates.Any(lr =>
             newStart <= lr.EndDate.Date &&
             newEnd >= lr.StartDate.Date);
 
@@ -457,39 +479,34 @@ public class LeaveRequestsService : ILeaveRequestsService
     }
 
     private async Task EnsureAnnualQuotaAsync(
-        int employeeId,
-        string leaveTypeCode,
+        Guid employeeId,
+        HrLite.Domain.Entities.LeaveType leaveType,
         DateTime newStart,
         DateTime newEnd,
-        int? excludeLeaveRequestId = null)
+        Guid? excludeLeaveRequestId = null)
     {
         var annualCode = _configuration.GetValue<string>("LeavePolicy:AnnualLeaveTypeCode", AnnualLeaveTypeCodeDefault)
             ?? AnnualLeaveTypeCodeDefault;
 
-        if (!string.Equals(leaveTypeCode, annualCode, StringComparison.OrdinalIgnoreCase))
+        if (!string.Equals(leaveType.Code, annualCode, StringComparison.OrdinalIgnoreCase))
         {
             return;
         }
 
-        var annualQuotaDays = _configuration.GetValue<int>("LeavePolicy:AnnualQuotaDays", 14);
+        var annualQuotaDays = leaveType.DefaultAnnualQuotaDays;
+        if (annualQuotaDays <= 0)
+        {
+            annualQuotaDays = _configuration.GetValue<int>("LeavePolicy:AnnualQuotaDays", 14);
+        }
         if (annualQuotaDays <= 0)
         {
             annualQuotaDays = 14;
         }
 
-        var q = _context.LeaveRequests
-            .AsNoTracking()
-            .Include(lr => lr.LeaveType)
-            .Where(lr => lr.EmployeeId == employeeId)
-            .Where(lr => lr.Status == LeaveStatus.Approved)
-            .Where(lr => lr.LeaveType.Code.ToLower() == annualCode.ToLower());
-
-        if (excludeLeaveRequestId.HasValue)
-        {
-            q = q.Where(lr => lr.Id != excludeLeaveRequestId.Value);
-        }
-
-        var approvedAnnualLeaves = await q.ToListAsync();
+        var approvedAnnualLeaves = await _leaveRequests.GetApprovedForEmployeeByLeaveTypeCodeAsync(
+            employeeId,
+            annualCode,
+            excludeLeaveRequestId);
 
         for (var year = newStart.Year; year <= newEnd.Year; year++)
         {

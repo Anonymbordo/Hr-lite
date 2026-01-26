@@ -25,9 +25,9 @@ public class LeaveRequestsController : ControllerBase
         return Ok(await _service.GetAsync(query));
     }
 
-    [HttpGet("{id:int}")]
+    [HttpGet("{id:guid}")]
     [ProducesResponseType(typeof(LeaveRequestDto), StatusCodes.Status200OK)]
-    public async Task<IActionResult> GetById(int id)
+    public async Task<IActionResult> GetById(Guid id)
     {
         return Ok(await _service.GetByIdAsync(id));
     }
@@ -39,23 +39,25 @@ public class LeaveRequestsController : ControllerBase
         return Ok(await _service.CreateAsync(dto));
     }
 
-    [HttpPost("{id:int}/approve")]
+    [HttpPost("{id:guid}/approve")]
     [ProducesResponseType(typeof(LeaveRequestDto), StatusCodes.Status200OK)]
-    public async Task<IActionResult> Approve(int id)
+    [Authorize(Roles = "HR,Admin")]
+    public async Task<IActionResult> Approve(Guid id)
     {
         return Ok(await _service.ApproveAsync(id));
     }
 
-    [HttpPost("{id:int}/reject")]
+    [HttpPost("{id:guid}/reject")]
     [ProducesResponseType(typeof(LeaveRequestDto), StatusCodes.Status200OK)]
-    public async Task<IActionResult> Reject(int id, [FromBody] RejectLeaveRequestDto dto)
+    [Authorize(Roles = "HR,Admin")]
+    public async Task<IActionResult> Reject(Guid id, [FromBody] RejectLeaveRequestDto dto)
     {
         return Ok(await _service.RejectAsync(id, dto));
     }
 
-    [HttpPost("{id:int}/cancel")]
+    [HttpPost("{id:guid}/cancel")]
     [ProducesResponseType(typeof(LeaveRequestDto), StatusCodes.Status200OK)]
-    public async Task<IActionResult> Cancel(int id)
+    public async Task<IActionResult> Cancel(Guid id)
     {
         return Ok(await _service.CancelAsync(id));
     }
@@ -67,9 +69,9 @@ public class LeaveRequestsController : ControllerBase
         return Ok(await _service.NormalizeReasonAsync(dto));
     }
 
-    [HttpPost("{id:int}/ai/explain-decision")]
+    [HttpPost("{id:guid}/ai/explain-decision")]
     [ProducesResponseType(typeof(ExplainDecisionResponseDto), StatusCodes.Status200OK)]
-    public async Task<IActionResult> ExplainDecision(int id)
+    public async Task<IActionResult> ExplainDecision(Guid id)
     {
         return Ok(await _service.ExplainDecisionAsync(id));
     }

@@ -8,15 +8,17 @@ public class Employee : BaseEntity
     public string FirstName { get; set; } = string.Empty;
     public string LastName { get; set; } = string.Empty;
     public string Email { get; set; } = string.Empty;
+    public string? Phone { get; set; }
     public string PasswordHash { get; set; } = string.Empty;
     public Role Role { get; set; }
-    public int? DepartmentId { get; set; }
+    public EmployeeStatus Status { get; set; } = EmployeeStatus.Active;
+    public Guid? DepartmentId { get; set; }
     public DateTime HireDate { get; set; }
-    public bool IsActive { get; set; } = true;
+    public decimal Salary { get; set; }
     public string? JobDescriptionDraft { get; set; }
 
     // Self-Referencing Properties
-    public int? ManagerId { get; set; }
+    public Guid? ManagerId { get; set; }
     public Employee? Manager { get; set; }
     public ICollection<Employee> DirectReports { get; set; } = new List<Employee>();
 

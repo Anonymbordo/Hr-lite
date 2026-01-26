@@ -6,13 +6,13 @@ namespace HrLite.Application.Interfaces;
 public interface ILeaveRequestsService
 {
     Task<PagedResultDto<LeaveRequestDto>> GetAsync(LeaveRequestQueryParameters query);
-    Task<LeaveRequestDto> GetByIdAsync(int id);
+    Task<LeaveRequestDto> GetByIdAsync(Guid id);
     Task<LeaveRequestDto> CreateAsync(CreateLeaveRequestDto dto);
 
-    Task<LeaveRequestDto> ApproveAsync(int id);
-    Task<LeaveRequestDto> RejectAsync(int id, RejectLeaveRequestDto dto);
-    Task<LeaveRequestDto> CancelAsync(int id);
+    Task<LeaveRequestDto> ApproveAsync(Guid id);
+    Task<LeaveRequestDto> RejectAsync(Guid id, RejectLeaveRequestDto dto);
+    Task<LeaveRequestDto> CancelAsync(Guid id);
 
     Task<NormalizeLeaveReasonResponseDto> NormalizeReasonAsync(NormalizeLeaveReasonRequestDto dto);
-    Task<ExplainDecisionResponseDto> ExplainDecisionAsync(int id);
+    Task<ExplainDecisionResponseDto> ExplainDecisionAsync(Guid id);
 }

@@ -2,34 +2,38 @@ using HrLite.Application.Common.Exceptions;
 using HrLite.Application.DTOs.Reports;
 using HrLite.Application.Interfaces;
 using HrLite.Domain.Enums;
-using Microsoft.EntityFrameworkCore;
 using System.Text.Json;
 
 namespace HrLite.Application.Services;
 
 public class ReportsService : IReportsService
 {
-    private readonly IApplicationDbContext _context;
+    private readonly IEmployeeRepository _employees;
+    private readonly ILeaveRequestRepository _leaveRequests;
     private readonly ILlmClient _llmClient;
 
-    public ReportsService(IApplicationDbContext context, ILlmClient llmClient)
+    public ReportsService(
+        IEmployeeRepository employees,
+        ILeaveRequestRepository leaveRequests,
+        ILlmClient llmClient)
     {
-        _context = context;
+        _employees = employees;
+        _leaveRequests = leaveRequests;
         _llmClient = llmClient;
     }
 
     public async Task<List<HeadcountByDepartmentDto>> GetHeadcountByDepartmentAsync()
     {
-        var headcounts = await _context.Employees
-            .Where(e => e.IsActive)
-            .GroupBy(e => e.Department!.Name)
+        var employees = await _employees.GetByStatusWithDepartmentAsync(EmployeeStatus.Active);
+        var headcounts = employees
+            .GroupBy(e => e.Department?.Name ?? "Departman Yok")
             .Select(g => new HeadcountByDepartmentDto
             {
                 DepartmentName = g.Key,
                 EmployeeCount = g.Count()
             })
             .OrderByDescending(h => h.EmployeeCount)
-            .ToListAsync();
+            .ToList();
 
         return headcounts;
     }
@@ -41,9 +45,7 @@ public class ReportsService : IReportsService
             throw new ValidationException("Invalid year. Must be between 2000 and 2100.");
         }
 
-        var leaveRequests = await _context.LeaveRequests
-            .Where(lr => lr.StartDate.Year == year)
-            .ToListAsync();
+        var leaveRequests = await _leaveRequests.GetByYearAsync(year);
 
         var monthlyData = leaveRequests
             .GroupBy(lr => lr.StartDate.Month)

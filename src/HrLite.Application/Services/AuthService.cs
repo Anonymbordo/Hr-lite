@@ -1,40 +1,44 @@
+using HrLite.Application.Common;
 using HrLite.Application.Common.Exceptions;
 using HrLite.Application.DTOs.Auth;
 using HrLite.Application.Interfaces;
-using Microsoft.EntityFrameworkCore;
+using HrLite.Application.Validators;
+using HrLite.Domain.Enums;
 
 namespace HrLite.Application.Services;
 
 public class AuthService : IAuthService
 {
-    private readonly IApplicationDbContext _context;
+    private static readonly LoginRequestValidator LoginValidator = new();
+    private readonly IEmployeeRepository _employees;
     private readonly IJwtTokenGenerator _jwtTokenGenerator;
 
-    public AuthService(IApplicationDbContext context, IJwtTokenGenerator jwtTokenGenerator)
+    public AuthService(IEmployeeRepository employees, IJwtTokenGenerator jwtTokenGenerator)
     {
-        _context = context;
+        _employees = employees;
         _jwtTokenGenerator = jwtTokenGenerator;
     }
 
     public async Task<LoginResponse> LoginAsync(LoginRequest request)
     {
-        if (string.IsNullOrWhiteSpace(request.Email) || string.IsNullOrWhiteSpace(request.Password))
+        if (request == null)
         {
-            throw new ValidationException("Email and password are required.");
+            throw new ValidationException("Request body is required.");
         }
 
-        var employee = await _context.Employees
-            .FirstOrDefaultAsync(e => e.Email == request.Email && e.IsActive);
+        ValidationHelper.ValidateAndThrow(LoginValidator, request);
 
-        if (employee == null)
+        var employee = await _employees.GetByEmailAsync(request.Email);
+
+        if (employee == null || employee.Status != EmployeeStatus.Active)
         {
-            throw new BusinessException("Invalid email or password.", "INVALID_CREDENTIALS");
+            throw new UnauthorizedException("Invalid email or password.");
         }
 
         // Simple password check (in production, use BCrypt or similar)
         if (!VerifyPassword(request.Password, employee.PasswordHash))
         {
-            throw new BusinessException("Invalid email or password.", "INVALID_CREDENTIALS");
+            throw new UnauthorizedException("Invalid email or password.");
         }
 
         var token = _jwtTokenGenerator.GenerateToken(employee);

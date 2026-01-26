@@ -6,7 +6,7 @@ using Microsoft.EntityFrameworkCore.Diagnostics;
 
 namespace HrLite.Infrastructure.Persistence;
 
-public class ApplicationDbContext : DbContext, IApplicationDbContext
+public class ApplicationDbContext : DbContext
 {
     private readonly ICurrentUserService? _currentUserService;
 
@@ -43,6 +43,9 @@ public class ApplicationDbContext : DbContext, IApplicationDbContext
             
             entity.Property(e => e.FirstName).IsRequired().HasMaxLength(100);
             entity.Property(e => e.LastName).IsRequired().HasMaxLength(100);
+            entity.Property(e => e.Phone).HasMaxLength(30);
+            entity.Property(e => e.Salary).HasColumnType("decimal(18,2)");
+            entity.Property(e => e.Status).IsRequired();
             
             // Employee.cs içinde bu alan varsa açık kalsın:
             entity.Property(e => e.PasswordHash).IsRequired();
@@ -65,6 +68,7 @@ public class ApplicationDbContext : DbContext, IApplicationDbContext
         {
             entity.HasKey(d => d.Id);
             entity.Property(d => d.Name).IsRequired().HasMaxLength(200);
+            entity.HasIndex(d => d.Name).IsUnique();
         });
 
         // --- LEAVE REQUEST (İZİN) AYARLARI ---
@@ -72,6 +76,7 @@ public class ApplicationDbContext : DbContext, IApplicationDbContext
         {
             entity.HasKey(lr => lr.Id);
             entity.Property(lr => lr.Reason).IsRequired().HasMaxLength(500);
+            entity.Property(lr => lr.Days).IsRequired();
 
             entity.HasOne(lr => lr.Employee)
                 .WithMany(e => e.LeaveRequests)
@@ -90,6 +95,7 @@ public class ApplicationDbContext : DbContext, IApplicationDbContext
             entity.HasKey(lt => lt.Id);
             entity.Property(lt => lt.Code).IsRequired().HasMaxLength(50);
             entity.Property(lt => lt.Name).IsRequired().HasMaxLength(200);
+            entity.Property(lt => lt.DefaultAnnualQuotaDays).IsRequired();
 
             entity.HasIndex(lt => lt.Code).IsUnique();
         });

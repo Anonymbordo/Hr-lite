@@ -1,3 +1,4 @@
+using HrLite.Domain.Enums;
 using System.ComponentModel.DataAnnotations;
 
 namespace HrLite.Application.DTOs;
@@ -11,8 +12,12 @@ public class UpdateEmployeeDto
     [Required]
     [EmailAddress]
     public string Email { get; set; } = string.Empty;
+    [Phone]
+    public string? Phone { get; set; }
     public int Role { get; set; }
-    public int? DepartmentId { get; set; }
-    public int? ManagerId { get; set; }
-    public bool IsActive { get; set; } = true;
+    public int Status { get; set; } = (int)EmployeeStatus.Active;
+    public Guid? DepartmentId { get; set; }
+    public Guid? ManagerId { get; set; }
+    public decimal Salary { get; set; }
+    public DateTime HireDate { get; set; }
 }

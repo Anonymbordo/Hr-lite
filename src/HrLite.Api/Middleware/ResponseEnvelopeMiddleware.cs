@@ -35,21 +35,26 @@ public class ResponseEnvelopeMiddleware
 
         var responseText = await new StreamReader(responseBody).ReadToEndAsync();
 
+        var isSuccessStatus = context.Response.StatusCode >= (int)HttpStatusCode.OK
+            && context.Response.StatusCode < (int)HttpStatusCode.MultipleChoices;
+        var isAlreadyWrapped = responseText.TrimStart().StartsWith("{\"success\"");
+
         // Don't wrap if already wrapped or if it's a non-successful response handled by exception middleware
-        if (context.Response.StatusCode == (int)HttpStatusCode.OK && 
-            !string.IsNullOrEmpty(responseText) &&
-            !responseText.TrimStart().StartsWith("{\"success\""))
+        if (isSuccessStatus && !isAlreadyWrapped)
         {
             var correlationId = context.Items["CorrelationId"]?.ToString();
             
             object? data = null;
-            try
+            if (!string.IsNullOrWhiteSpace(responseText))
             {
-                data = JsonSerializer.Deserialize<object>(responseText);
-            }
-            catch
-            {
-                data = responseText;
+                try
+                {
+                    data = JsonSerializer.Deserialize<object>(responseText);
+                }
+                catch
+                {
+                    data = responseText;
+                }
             }
 
             var envelope = ApiResponse<object>.SuccessResponse(data ?? new { }, correlationId);
@@ -59,6 +64,10 @@ public class ResponseEnvelopeMiddleware
             });
 
             context.Response.ContentType = "application/json";
+            if (context.Response.StatusCode == (int)HttpStatusCode.NoContent)
+            {
+                context.Response.StatusCode = (int)HttpStatusCode.OK;
+            }
             await context.Response.WriteAsync(envelopedResponse);
         }
         else

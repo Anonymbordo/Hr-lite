@@ -35,7 +35,7 @@ public class AuditInterceptor : SaveChangesInterceptor
     {
         if (context == null) return;
 
-        var currentUserId = _currentUserService?.UserId ?? 0;
+        var currentUserId = _currentUserService?.UserId ?? Guid.Empty;
         var now = DateTime.UtcNow;
 
         foreach (var entry in context.ChangeTracker.Entries<BaseEntity>())

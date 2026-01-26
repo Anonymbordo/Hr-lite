@@ -1,19 +1,17 @@
 using DotNetEnv; // .env okumak için gerekli
 using HrLite.Api.Middleware;
 using HrLite.Api.Services;
+using HrLite.Application.Common;
 using HrLite.Application.Interfaces;
 using HrLite.Application.Services;
-using HrLite.Infrastructure.AI;
-using HrLite.Infrastructure.Authentication;
-using HrLite.Infrastructure.Persistence;
-using HrLite.Infrastructure.Seed;
-using HrLite.Infrastructure.Services;
+using HrLite.Infrastructure;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
-using Microsoft.EntityFrameworkCore;
+using Microsoft.AspNetCore.Mvc;
 using Microsoft.IdentityModel.Tokens;
 using Microsoft.OpenApi.Models;
 using Serilog;
 using System.Text;
+using System.Text.Json;
 
 // --- 1. ADIM: .env DOSYASINI YÜKLE VE KONTROL ET ---
 // Bu blok, uygulama daha ayağa kalkmadan şifreleri kontrol eder.
@@ -34,10 +32,10 @@ if (string.IsNullOrEmpty(apiKey))
     Console.WriteLine("   -> Lütfen terminalde 'src/HrLite.Api' klasörüne girdiğinden emin ol.");
     Console.WriteLine("   -> Komut: cd src/HrLite.Api");
 }
-else if (apiKey.StartsWith("gsk_"))
+else if (apiKey.StartsWith("sk-") || apiKey.StartsWith("gsk_"))
 {
     Console.ForegroundColor = ConsoleColor.Green;
-    Console.WriteLine("✅ [BAŞARILI] .env dosyası bulundu, Gerçek Groq Anahtarı yüklendi.");
+    Console.WriteLine("✅ [BAŞARILI] .env dosyası bulundu, AI anahtarı yüklendi.");
 }
 else
 {
@@ -53,9 +51,6 @@ Console.WriteLine("==================================================");
 var builder = WebApplication.CreateBuilder(args);
 
 // --- SERVİS KAYITLARI (Dependency Injection) ---
-// AI Servisi
-builder.Services.AddHttpClient<IAiService, OpenAiService>();
-
 // Departman ve Çalışan Servisleri
 builder.Services.AddScoped<IDepartmentService, DepartmentService>();
 builder.Services.AddScoped<IEmployeeService, EmployeeService>();
@@ -63,6 +58,9 @@ builder.Services.AddScoped<IEmployeeService, EmployeeService>();
 // Leave Management Servisleri
 builder.Services.AddScoped<ILeaveTypesService, LeaveTypesService>();
 builder.Services.AddScoped<ILeaveRequestsService, LeaveRequestsService>();
+
+// Infrastructure (DbContext, repositories, AI, auth)
+builder.Services.AddInfrastructure(builder.Configuration);
 
 // Configure Serilog
 Log.Logger = new LoggerConfiguration()
@@ -76,7 +74,26 @@ Log.Logger = new LoggerConfiguration()
 builder.Host.UseSerilog();
 
 // Add services to the container
-builder.Services.AddControllers();
+builder.Services.AddControllers()
+    .ConfigureApiBehaviorOptions(options =>
+    {
+        options.InvalidModelStateResponseFactory = context =>
+        {
+            var correlationId = context.HttpContext.Items["CorrelationId"]?.ToString();
+            var errors = context.ModelState.Values
+                .SelectMany(v => v.Errors)
+                .Select(e => string.IsNullOrWhiteSpace(e.ErrorMessage) ? "Invalid value." : e.ErrorMessage)
+                .ToList();
+
+            var response = ApiResponse<object>.ErrorResponse(
+                "VALIDATION_ERROR",
+                "One or more validation errors occurred.",
+                correlationId,
+                errors);
+
+            return new BadRequestObjectResult(response);
+        };
+    });
 builder.Services.AddEndpointsApiExplorer();
 
 // Swagger configuration with JWT support
@@ -127,13 +144,6 @@ builder.Services.AddSwaggerGen(c =>
     }
 });
 
-// Database
-builder.Services.AddDbContext<ApplicationDbContext>(options =>
-    options.UseSqlite(builder.Configuration.GetConnectionString("DefaultConnection")));
-
-builder.Services.AddScoped<IApplicationDbContext>(provider => 
-    provider.GetRequiredService<ApplicationDbContext>());
-
 // Authentication
 builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
     .AddJwtBearer(options =>
@@ -157,6 +167,51 @@ builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
                 Encoding.UTF8.GetBytes(builder.Configuration["Jwt:Secret"] 
                     ?? throw new InvalidOperationException("JWT secret not configured")))
         };
+
+        options.Events = new JwtBearerEvents
+        {
+            OnChallenge = async context =>
+            {
+                if (context.Response.HasStarted)
+                {
+                    return;
+                }
+
+                context.HandleResponse();
+                var correlationId = context.HttpContext.Items["CorrelationId"]?.ToString();
+                var response = ApiResponse<object>.ErrorResponse(
+                    "UNAUTHORIZED",
+                    "Authentication is required to access this resource.",
+                    correlationId);
+
+                context.Response.StatusCode = StatusCodes.Status401Unauthorized;
+                context.Response.ContentType = "application/json";
+                await context.Response.WriteAsync(JsonSerializer.Serialize(response, new JsonSerializerOptions
+                {
+                    PropertyNamingPolicy = JsonNamingPolicy.CamelCase
+                }));
+            },
+            OnForbidden = async context =>
+            {
+                if (context.Response.HasStarted)
+                {
+                    return;
+                }
+
+                var correlationId = context.HttpContext.Items["CorrelationId"]?.ToString();
+                var response = ApiResponse<object>.ErrorResponse(
+                    "FORBIDDEN",
+                    "You do not have permission to access this resource.",
+                    correlationId);
+
+                context.Response.StatusCode = StatusCodes.Status403Forbidden;
+                context.Response.ContentType = "application/json";
+                await context.Response.WriteAsync(JsonSerializer.Serialize(response, new JsonSerializerOptions
+                {
+                    PropertyNamingPolicy = JsonNamingPolicy.CamelCase
+                }));
+            }
+        };
     });
 
 builder.Services.AddAuthorization();
@@ -166,12 +221,8 @@ builder.Services.AddHttpContextAccessor();
 
 // Application Services (Diğer servisler)
 builder.Services.AddScoped<ICurrentUserService, CurrentUserService>();
-builder.Services.AddScoped<IJwtTokenGenerator, JwtTokenGenerator>();
 builder.Services.AddScoped<IAuthService, AuthService>();
 builder.Services.AddScoped<IReportsService, ReportsService>();
-
-// AI/LLM Client
-builder.Services.AddHttpClient<ILlmClient, OpenAiLlmClient>();
 
 var app = builder.Build();
 
@@ -209,17 +260,11 @@ app.UseMiddleware<ResponseEnvelopeMiddleware>();
 app.MapControllers();
 
 // Database initialization (optional - for demo purposes)
-using (var scope = app.Services.CreateScope())
+if (Environment.GetEnvironmentVariable("SKIP_DB_INIT") != "1")
 {
-    var context = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
     try
     {
-        // Create database and apply migrations
-        await context.Database.MigrateAsync();
-        
-        // Seed initial data
-        await DatabaseSeeder.SeedAsync(context);
-        
+        await app.Services.InitializeInfrastructureAsync();
         Log.Information("Database initialized and seeded successfully");
     }
     catch (Exception ex)

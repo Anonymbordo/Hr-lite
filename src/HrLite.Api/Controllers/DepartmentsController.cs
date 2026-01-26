@@ -1,11 +1,13 @@
 using HrLite.Application.DTOs;
 using HrLite.Application.Interfaces;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 
 namespace HrLite.Api.Controllers;
 
 [ApiController]
 [Route("api/[controller]")]
+[Authorize(Roles = "HR,Admin")]
 public class DepartmentsController : ControllerBase
 {
     private readonly IDepartmentService _service;
@@ -33,9 +35,9 @@ public class DepartmentsController : ControllerBase
     /// <summary>
     /// Departman detayı - ID ile
     /// </summary>
-    [HttpGet("{id}")]
+    [HttpGet("{id:guid}")]
     [ProducesResponseType(typeof(DepartmentDto), StatusCodes.Status200OK)]
-    public async Task<IActionResult> GetById(int id)
+    public async Task<IActionResult> GetById(Guid id)
     {
         return Ok(await _service.GetByIdAsync(id));
     }
@@ -53,8 +55,8 @@ public class DepartmentsController : ControllerBase
     /// <summary>
     /// Departman güncelle
     /// </summary>
-    [HttpPut("{id}")]
-    public async Task<IActionResult> Update(int id, [FromBody] DepartmentDto dto)
+    [HttpPut("{id:guid}")]
+    public async Task<IActionResult> Update(Guid id, [FromBody] DepartmentDto dto)
     {
         var result = await _service.UpdateAsync(id, dto);
         return Ok(result);
@@ -63,10 +65,10 @@ public class DepartmentsController : ControllerBase
     /// <summary>
     /// Departmanı pasifleştir (IsActive=false)
     /// </summary>
-    [HttpPut("{id}/deactivate")]
-    public async Task<IActionResult> Deactivate(int id)
+    [HttpPut("{id:guid}/deactivate")]
+    public async Task<IActionResult> Deactivate(Guid id)
     {
         await _service.DeactivateAsync(id);
-        return NoContent();
+        return Ok();
     }
 }

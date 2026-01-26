@@ -5,11 +5,11 @@ namespace HrLite.Application.Interfaces;
 public interface IEmployeeService
 {
     Task<PagedResultDto<EmployeeDto>> GetAsync(EmployeeQueryParameters query);
-    Task<EmployeeDto> GetByIdAsync(int id);
+    Task<EmployeeDto> GetByIdAsync(Guid id);
     Task<EmployeeDto> CreateAsync(CreateEmployeeDto createDto);
-    Task<EmployeeDto> UpdateAsync(int id, UpdateEmployeeDto updateDto);
-    Task DeactivateAsync(int id);
+    Task<EmployeeDto> UpdateAsync(Guid id, UpdateEmployeeDto updateDto);
+    Task DeactivateAsync(Guid id);
 
     // AI Job Description JSON şeması ile üretim
-    Task<JobDescriptionDraftDto> GenerateAiJobDescriptionAsync(int employeeId);
+    Task<JobDescriptionDraftDto> GenerateAiJobDescriptionAsync(Guid employeeId);
 }
